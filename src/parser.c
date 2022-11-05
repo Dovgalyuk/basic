@@ -37,7 +37,7 @@ void delay_ms(uint16_t count) {
 
 #include "usingwin.h"
 
-char *_dummy = 0;
+char _dummy = 0;
 
 /*
   line = [number] statement [ : statement ] CR
@@ -327,9 +327,15 @@ expression(expression_result *result)
   }
   else
   {
-    // printf("numeric");
+    float number = numeric_expression();
+    relop op = get_relop();
+    if (op != OP_NOP)
+    {
+        float right_number = numeric_expression();
+        number = numeric_condition(number, right_number, op);
+    }
     result->type = expression_type_numeric;
-    result->value.numeric = numeric_expression();
+    result->value.numeric = number;
   }
 }
 
@@ -499,17 +505,17 @@ f_atn(basic_type* n, basic_type* rv)
   return 0;
 }
 
-static float
-_or(float a, float b)
-{
-  return (float) ( (int) a | (int) b );
-}
+// static float
+// _or(float a, float b)
+// {
+//   return (float) ( (int) a | (int) b );
+// }
 
-static float
-_and(float a, float b)
-{
-  return (float) ( (int) a & (int) b );
-}
+// static float
+// _and(float a, float b)
+// {
+//   return (float) ( (int) a & (int) b );
+// }
 
 static int
 str_chr(basic_type* n, basic_type* rv)
@@ -583,10 +589,10 @@ accept(token t)
 static bool
 expect(token t)
 {
-  // printf("expect %ld, have %ld\n", t, sym);
   if (accept(t)) {
     return true;
   }
+  printf("\nexpect %d, have %d\n", (int)t, (int)sym);
   error("UNEXPECTED SYMBOL");
   return false;
 }
@@ -643,14 +649,7 @@ numeric_factor(void)
     get_sym();
   }
 
-  relop op = get_relop();
-  if (op != OP_NOP)
-  {
-    float right_number = factor();    
-    number = numeric_condition(number, right_number, op);
-  }
-
-  return number; 
+  return number;
 }
 
 static float
@@ -676,15 +675,27 @@ factor(void)
 }
 
 static float
+power_term(void)
+{
+  float f1 = factor();
+  while (sym == T_POWER) {
+      get_sym();
+      float f2 = factor();
+      f1 = pow(f1, f2);
+  }
+  return f1;
+}
+
+static float
 term(void)
 {
   // printf("term\n");
 
-  float f1 = factor();
-  while (sym == T_MULTIPLY || sym == T_DIVIDE || sym == t_op_and ) {
+  float f1 = power_term();
+  while (sym == T_MULTIPLY || sym == T_DIVIDE/* || sym == t_op_and*/ ) {
     token operator = sym;
     get_sym();
-    float f2 = factor();
+    float f2 = power_term();
     switch(operator) {
       case T_MULTIPLY:
         f1 = f1 * f2;
@@ -693,11 +704,11 @@ term(void)
         f1 = f1 / f2;
         break;
       default:
-        if (operator == t_op_and)
-        {
-          f1 = _and( f1, f2 );
-        }
-        else
+        // if (operator == t_op_and)
+        // {
+        //   f1 = _and( f1, f2 );
+        // }
+        // else
         {
         error("TERM SYNTAX ERROR");    
         }
@@ -721,7 +732,7 @@ numeric_expression(void)
   if (operator == T_MINUS) {
     t1 = -1 * t1;
   }
-  while ( sym == T_PLUS || sym == T_MINUS || sym == t_op_or ) {
+  while ( sym == T_PLUS || sym == T_MINUS/* || sym == t_op_or */) {
     operator = sym;
     get_sym();
     float t2 = term();
@@ -733,11 +744,11 @@ numeric_expression(void)
         t1 = t1 - t2;
         break;
       default:
-        if ( operator == t_op_or )
-        {
-          t1 = _or( t1, t2 );
-        }
-        else
+        // if ( operator == t_op_or )
+        // {
+        //   t1 = _or( t1, t2 );
+        // }
+        // else
         {
         error("EXPRESSION SYNTAX ERROR");
         }
@@ -902,7 +913,7 @@ do_print(basic_type* rv)
         basic_type rv;
         basic_dispatch_function( bf, &rv);
       }
-      else
+      else if (sym != T_COMMA && sym != T_SEMICOLON)
       {
         expression_result expr;
         expression(&expr);
@@ -913,20 +924,19 @@ do_print(basic_type* rv)
         }
       }
 
-      if (sym == T_SEMICOLON)
+      if (sym == T_COMMA)
+      {
+        accept(T_COMMA);
+        __putch('\t');
+      }
+      else if (sym == T_SEMICOLON)
       {
         accept(T_SEMICOLON);
       }
       else
-        if (sym == T_COMMA)
-        {
-          accept(T_COMMA);
-          __putch('\t');
-        }
-        else
-        {
-          __putch('\n');
-        }
+      {
+        __putch('\n');
+      }
     }
   }
 
@@ -1049,8 +1059,8 @@ do_on_goto(basic_type* rv)
   }
   accept(what);
 
-  size_t list[10];
-  size_t size = get_list(list, 10);
+  size_t list[20];
+  size_t size = get_list(list, 20);
 
   if(index>size){
     error("ON OUT OF BOUNDS");
@@ -1097,7 +1107,7 @@ do_gosub(basic_type* rv)
     return 0;
   }
   int line_number = (int) tokenizer_get_number();
-  // printf("line number: %d\n", line_number);
+  //printf("GOSUB line number: %d\n", line_number);
   accept(T_NUMBER);
 
   stack_frame_gosub *g;
@@ -1109,7 +1119,7 @@ do_gosub(basic_type* rv)
 
   __stack_p -= sizeof(stack_frame_gosub);
   g = (stack_frame_gosub*) &(__stack[__stack_p]);
-
+  //printf("GOSUB stack line=%d _p=%d\n", (int)__line, (int)__stack_p);
   g->type = stack_frame_type_gosub;
   g->line = __line;
   g->cursor = tokenizer_char_pointer(NULL); 
@@ -1125,9 +1135,18 @@ do_return(basic_type* rv)
   // printf("do_return");
   accept(t_keyword_return);
 
+  // skip unfinished fors
+  stack_frame_type t = *(stack_frame_type*) &(__stack[__stack_p]);
+  while (t == stack_frame_type_for)
+  {
+      __stack_p += sizeof(stack_frame_for);
+      t = *(stack_frame_type*) &(__stack[__stack_p]);
+  }
+
   stack_frame_gosub *g;
   g = (stack_frame_gosub*) &(__stack[__stack_p]);
 
+  //printf("RETURN stack line=%d _p=%d\n", (int)__line, (int)__stack_p);
   if ( g->type != stack_frame_type_gosub )
   {
     error("EXPECTED GOSUB STACK FRAME");
@@ -1145,7 +1164,7 @@ do_return(basic_type* rv)
 static int
 do_for(basic_type* rv)
 {
-  // printf("do_for\n");
+   //printf("do_for\n");
 
   accept(t_keyword_for);
 
@@ -1172,18 +1191,26 @@ do_for(basic_type* rv)
     step = numeric_expression();
   }  
 
-  stack_frame_for *f;
-  if ( __stack_p <  sizeof(stack_frame_for) )
+  stack_frame_for *f = (stack_frame_for*) &(__stack[__stack_p]);
+  if (f->type == stack_frame_type_for
+      && !strcmp(name, f->variable_name))
   {
-    error("STACK FULL");
-    return 0;
-  }  
+      // overwrite the current loop for the same variable
+  }
+  else
+  {
+    if ( __stack_p <  sizeof(stack_frame_for) )
+    {
+        error("STACK FULL");
+        return 0;
+    }  
 
-  __stack_p -= sizeof(stack_frame_for);
-  f = (stack_frame_for*) &(__stack[__stack_p]);
-  
-  f->type = stack_frame_type_for;
-  strncpy(f->variable_name, name, tokenizer_variable_length);
+    __stack_p -= sizeof(stack_frame_for);
+    f = (stack_frame_for*) &(__stack[__stack_p]);
+    f->type = stack_frame_type_for;
+    strncpy(f->variable_name, name, tokenizer_variable_length);
+  }
+  //printf("FOR %s %d newp=%d\n", name, (int)__line, (int)__stack_p);
   f->end_value = end_value;
   f->step = step;
   f->line = __line;
@@ -1195,42 +1222,53 @@ do_for(basic_type* rv)
 static int
 do_next(basic_type* rv)
 {
-  // printf("do_next\n");
+   //printf("do_next\n");
   accept(t_keyword_next);
 
-  stack_frame_for *f;
-  f = (stack_frame_for*) &(__stack[__stack_p]);
-
-  if ( f->type != stack_frame_type_for )
+  if (sym != T_VARIABLE_NUMBER)
   {
-    error("EXPECTED FOR STACK FRAME");
+    error("NEXT WITHOUNT NUMBER");
     return 0;
   }
 
-  if (sym == T_VARIABLE_NUMBER)
+  char var_name[tokenizer_variable_length];
+  tokenizer_get_variable_name(var_name);
+  accept(T_VARIABLE_NUMBER);
+
+  stack_frame_for *f;
+  while (true)
   {
-    char var_name[tokenizer_variable_length];
-    tokenizer_get_variable_name(var_name);
-    accept(T_VARIABLE_NUMBER);
+    f = (stack_frame_for*) &(__stack[__stack_p]);
+
+    if ( f->type != stack_frame_type_for )
+    {
+        error("EXPECTED FOR STACK FRAME");
+        return 0;
+    }
+
+    //printf("NEXT var=%s stack=%s p=%d\n", var_name, f->variable_name, (int)__stack_p);
     if ( strcmp(var_name, f->variable_name) != 0 )
     {
-      char _error[40];
-      snprintf(_error, sizeof(_error), "EXPECTED NEXT WITH %s, GOT %s", var_name, f->variable_name);
-      error(_error);
-      return 0;
+        // skip wrong variable
+        __stack_p += sizeof(stack_frame_for);
+    }
+    else
+    {
+        break;
     }
   }
 
-  // check end condition 
+  // check end condition
   float value = variable_get_numeric(f->variable_name) + f->step;
   if ( (f->step > 0 && value > f->end_value) || (f->step < 0 && value < f->end_value) )
   {
+      //printf("NEXT END p=%d\n", (int)__stack_p);
       __stack_p += sizeof(stack_frame_for);
       return 0;
   }
 
-  variable_set_numeric(f->variable_name, value); 
-
+  variable_set_numeric(f->variable_name, value);
+  //printf("NEXT CONTINUE %d p=%d\n", (int)f->line, (int)__stack_p);
   __line = f->line;
   tokenizer_char_pointer( f->cursor );
 
@@ -1343,16 +1381,31 @@ do_data(basic_type* rv)
   return 0;
 }
 
+static float _data_number(void)
+{
+    if (sym == T_MINUS)
+    {
+        get_sym();
+        return -tokenizer_get_number();
+    }
+    return tokenizer_get_number();
+}
+
   static bool
 _data_find(variable_type type, value* value)
 {
   tokenizer_init( __data.cursor );
   tokenizer_char_pointer( __data.char_pointer );
+  //printf("data find\n");
   while (__data.cursor)
   {
     get_sym();
     while (sym != T_EOF)
     {
+      if (sym == t_keyword_rem)
+      {
+          break;
+      }
       if (sym == t_keyword_data)
       {
         accept(t_keyword_data);
@@ -1360,7 +1413,7 @@ _data_find(variable_type type, value* value)
         {
           value->string = tokenizer_get_string();
         } else {
-          value->number = tokenizer_get_number();
+          value->number = _data_number();
         }  
         __data.state = data_state_read;
         __data.char_pointer = tokenizer_char_pointer(NULL);
@@ -1383,6 +1436,7 @@ _data_read(variable_type type, value* value)
   tokenizer_init( __data.cursor );
   tokenizer_char_pointer( __data.char_pointer );
   get_sym();
+  //printf("data read\n");
   if ( sym != T_EOF )
   {
     accept(T_COMMA); // seperated by comma's
@@ -1392,7 +1446,7 @@ _data_read(variable_type type, value* value)
     }
     else
     {
-      value->number = tokenizer_get_number();
+      value->number = _data_number();
     }
     __data.char_pointer = tokenizer_char_pointer(NULL);
     rv = true; 
@@ -1407,6 +1461,7 @@ _data_read(variable_type type, value* value)
   static bool
 _do_data_read(variable_type type, value* value)
 {
+  token save_sym = sym;
   char* save_pointer = tokenizer_char_pointer(NULL);
   bool rv = false;
 
@@ -1439,6 +1494,7 @@ _do_data_read(variable_type type, value* value)
   }
 
   tokenizer_init( __cursor );
+  sym = save_sym;
   tokenizer_char_pointer(save_pointer);
 
   return rv;
@@ -1476,9 +1532,10 @@ do_read(basic_type* rv)
         get_vector(vector,5);
         expect(T_RIGHT_BANANA);
       }
-      // printf("variable name: %s\n", name);
+       //printf("do_read variable name: %s\n", name);
       value v;
       bool read_ok = _do_data_read(type, &v);
+      //printf("READ %f\n", v.number);
       if ( ! read_ok)
       {
         error("READ WITHOUT DATA");
@@ -1505,7 +1562,7 @@ do_read(basic_type* rv)
         }
       }
     }
-    get_sym();
+    //get_sym();
     accept(T_COMMA);
   }
 
@@ -1783,6 +1840,11 @@ numeric_condition(float left, float right, relop op)
       return left > right;  
     case OP_NE:
       return left != right;
+    // {
+    //   float v = left - right;
+    //   if (v < 0) v = -v;
+    //   return v > 0.00001;
+    // }
   }
 
   return false;
@@ -1853,24 +1915,47 @@ move_to_next_line(void)
   get_sym();
 }
 
+static bool do_if_expression(void)
+{
+    expression_result left_side, right_side;
+    bool result;
+    expression(&left_side);
+
+    if ( left_side.type == expression_type_string )
+    {
+        relop op = get_relop();
+        expression(&right_side);
+        result = condition(&left_side, &right_side, op);
+    }
+    else
+    {
+        // relop op = get_relop();
+        // expression(&right_side);
+        // result = condition(&left_side, &right_side, op);
+        result = left_side.value.numeric == 1.0;
+    }
+
+    return result;
+}
+
 static int
 do_if(basic_type* rv)
 {
-
-  expression_result left_side, right_side;
-  bool result;
-
-  expression(&left_side);
-
-  if ( left_side.type == expression_type_string )
+  bool result = do_if_expression();
+  // No priorities, just parse the operators
+  while (sym == t_op_and || sym == t_op_or)
   {
-    relop op = get_relop();
-    expression(&right_side);
-    result = condition(&left_side, &right_side, op);
-  }
-  else
-  {
-    result = left_side.value.numeric == 1.0;
+      bool do_and = sym == t_op_and;
+      get_sym();
+      bool next = do_if_expression();
+      if (do_and)
+      {
+          result = result && next;
+      }
+      else
+      {
+          result = result || next;
+      }
   }
 
   if (sym != t_keyword_then) {
@@ -1985,39 +2070,66 @@ do_input(basic_type* rv)
     return 0;
   }
 
-  char name[tokenizer_variable_length];
-  token type = sym; 
-  if (type == T_VARIABLE_NUMBER) {
-    tokenizer_get_variable_name(name);
-    accept(T_VARIABLE_NUMBER);
-  }
-
-  if (type == T_VARIABLE_STRING) {
-    tokenizer_get_variable_name(name);
-    accept(T_VARIABLE_STRING);
-  }
-
-  if (prompt)
-  {
-    expression_print(&expr);
-    if (expr.type == expression_type_string){
-      free(expr.value.string);
+    char name[tokenizer_variable_length];
+    token type = sym;
+    if (type == T_VARIABLE_NUMBER) {
+        tokenizer_get_variable_name(name);
+        accept(T_VARIABLE_NUMBER);
     }
-  }
-  // char* line = readline( prompt ? "" : "?" );
 
-  char line[MAX_LINE];
-  basic_io_readline( (prompt ? " " : "? "), line, sizeof(line) ); 
+    if (type == T_VARIABLE_STRING) {
+        tokenizer_get_variable_name(name);
+        accept(T_VARIABLE_STRING);
+    }
 
-  if (type == T_VARIABLE_NUMBER) {
-    char* t;
-    float value = strtof(line, &t); 
-    variable_set_numeric(name, value);
-  }
+    if (prompt)
+    {
+        expression_print(&expr);
+        if (expr.type == expression_type_string){
+        free(expr.value.string);
+        }
+    }
+    // char* line = readline( prompt ? "" : "?" );
 
-  if (type == T_VARIABLE_STRING) {
-    variable_set_string(name, line);
-  }
+    char line[MAX_LINE];
+    basic_io_readline( (prompt ? " " : "? "), line, sizeof(line) ); 
+
+    if (type == T_VARIABLE_NUMBER) {
+        char* t;
+        char *p = line;
+        float value = strtof(line, &t);
+        variable_set_numeric(name, value);
+
+        while (sym == T_COMMA)
+        {
+            // find ',' in input
+            while (*p && *p != ',' && *p != ' ')
+            {
+                ++p;
+            }
+            if (!*p)
+            {
+                error("EXPECTED COMMA IN INPUT");
+            }
+            ++p;
+
+            get_sym();
+            if (type == T_VARIABLE_NUMBER) {
+                tokenizer_get_variable_name(name);
+                accept(T_VARIABLE_NUMBER);
+            }
+            else
+            {
+                error("EXPECTED NUMERIC VARIABLE");
+            }
+            value = strtof(p, &t);
+            variable_set_numeric(name, value);
+        }
+    }
+
+    if (type == T_VARIABLE_STRING) {
+        variable_set_string(name, line);
+    }
 
   return 0;
 }
@@ -2066,10 +2178,6 @@ int do_sleep(basic_type* delay, basic_type* rv)
   nanosleep(&ts, NULL);
 
 #endif
-  struct timespec ts;
-  ts.tv_sec = milliseconds / 1000;
-  ts.tv_nsec = (milliseconds % 1000) * 1000000;
-  nanosleep(&ts, NULL);
 #endif
 
   rv->kind = kind_numeric;
